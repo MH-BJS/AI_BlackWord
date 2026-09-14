@@ -60,6 +60,22 @@ border-radius:16px;box-shadow:var(--shadow);max-height:420px;overflow:auto;text-
 .term-item{cursor:pointer}.term-item:hover{border-color:#c9d5ff}
 .term-item h3{margin:0 0 7px}.term-item p{margin:0;color:var(--muted);font-size:13px;line-height:1.65}
 .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;background:#f2f5fb;color:#667085;padding:5px 8px;border-radius:999px;margin-top:12px}
+.jargon-box{display:grid;grid-template-columns:1fr auto;gap:10px}
+.jargon-input{width:100%;border:1px solid #dbe2ef;border-radius:14px;background:#fff;padding:14px 15px;outline:none}
+.jargon-input:focus{border-color:#b9c8ff;box-shadow:0 0 0 4px rgba(59,109,246,.08)}
+.jargon-btn{border:0;border-radius:12px;background:var(--blue);color:#fff;padding:0 18px;cursor:pointer;font-weight:700}
+.jargon-examples{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.jargon-examples button{border:1px solid #dfe5f0;background:#fff;border-radius:999px;padding:7px 10px;cursor:pointer;color:#4b5565}
+.jargon-output{margin-top:14px;display:none}
+.jargon-output.show{display:block}
+.breakdown{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:10px}
+.break-item{border:1px solid var(--line);background:#fff;border-radius:14px;padding:13px;cursor:pointer}
+.break-item:hover{border-color:#c9d5ff;background:#fbfcff}
+.break-item b{display:block;margin-bottom:5px}.break-item span{font-size:13px;color:var(--muted);line-height:1.55}
+.term-nature{background:#fff8e8;color:#9a6700}
+.copy-link{border:1px solid #dfe5f0;background:#fff;border-radius:9px;padding:7px 10px;cursor:pointer;color:#4b5565}
+.copy-link:hover{background:#f8fafc}
+@media(max-width:640px){.jargon-box{grid-template-columns:1fr}.jargon-btn{padding:12px}.breakdown{grid-template-columns:1fr}}
 .modal{display:none;position:fixed;inset:0;background:rgba(15,23,42,.42);z-index:100;padding:18px;overflow:auto}
 .modal.show{display:block}.dialog{max-width:900px;margin:32px auto;background:#fff;border-radius:24px;box-shadow:0 30px 80px rgba(0,0,0,.18);overflow:hidden}
 .dialog-head{padding:24px 28px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:20px}
@@ -87,6 +103,7 @@ border-radius:16px;box-shadow:var(--shadow);max-height:420px;overflow:auto;text-
     <div class="brand"><small>AI 使用环境</small>术语百科</div>
     <div class="navlinks">
       <button onclick="scrollToId('categories')">分类</button>
+      <button onclick="scrollToId('jargon')">黑话拆解</button>
       <button onclick="scrollToId('compare')">易混淆</button>
       <button onclick="scrollToId('route')">学习路线</button>
       <button onclick="scrollToId('glossary')">全部词条</button>
@@ -114,6 +131,18 @@ border-radius:16px;box-shadow:var(--shadow);max-height:420px;overflow:auto;text-
   <section class="section">
     <div class="section-head"><div><h2>常见词</h2><div class="desc">这些词在 AI 使用环境讨论里出现频率很高。</div></div></div>
     <div class="chips" id="commonChips"></div>
+  </section>
+
+  <section class="section" id="jargon">
+    <div class="section-head"><div><h2>一句黑话，拆开看</h2><div class="desc">把看到的一串术语粘进来，网站会按现有词库识别并拆解；不使用 AI。</div></div></div>
+    <div class="card">
+      <div class="jargon-box">
+        <input id="jargonInput" class="jargon-input" placeholder="例如：IEPL 中转 + 美国住宅落地">
+        <button class="jargon-btn" onclick="breakJargon()">拆解</button>
+      </div>
+      <div class="jargon-examples" id="jargonExamples"></div>
+      <div class="jargon-output" id="jargonOutput"></div>
+    </div>
   </section>
 
   <section class="section" id="compare">
@@ -154,7 +183,7 @@ border-radius:16px;box-shadow:var(--shadow);max-height:420px;overflow:auto;text-
     <div class="term-list" id="termList"></div>
   </section>
 
-  <div class="footer">静态知识库 · 无需登录 · 无需 AI API · 适合部署到 GitHub Pages</div>
+  <div class="footer">静态知识库 · 无需登录 · 无需 AI API · GitHub Pages · <span id="siteVersion">v0.2.0</span></div>
 </div>
 
 <div class="modal" id="termModal" onclick="if(event.target===this)closeModal()">
@@ -194,9 +223,12 @@ function scrollToId(id){ document.getElementById(id).scrollIntoView({behavior:"s
 
 async function init(){
   DB = await fetch("data.json").then(r=>r.json());
-  renderCategories(); renderCommon(); renderComparisons(); renderRoute(); renderFilters(); renderTerms();
+  if(DB.meta?.version) document.getElementById("siteVersion").textContent=`v${DB.meta.version}`;
+  renderCategories(); renderCommon(); renderComparisons(); renderRoute(); renderFilters(); renderTerms(); renderJargonExamples();
   document.querySelectorAll("[data-term]").forEach(el=>el.onclick=()=>openTerm(el.dataset.term));
   setupSearch();
+  openFromHash();
+  window.addEventListener("hashchange", openFromHash);
 }
 function renderCategories(){
   const el=document.getElementById("categoryGrid");
@@ -220,6 +252,74 @@ function renderRoute(){
     `<div class="route-step"><b>${step[0]}</b><div class="mini">${step[1].map(t=>`<span onclick="openTerm('${t}')" style="cursor:pointer">${t}</span>`).join("")}</div></div>`
   ).join("");
 }
+
+function renderJargonExamples(){
+  const el=document.getElementById("jargonExamples");
+  if(!el || !DB.jargonExamples) return;
+  el.innerHTML=DB.jargonExamples.map(x=>`<button onclick="useJargonExample(${JSON.stringify(x.phrase)})">${x.phrase}</button>`).join("");
+}
+function useJargonExample(text){
+  document.getElementById("jargonInput").value=text;
+  breakJargon();
+}
+function findTermMatches(text){
+  const candidates=[];
+  DB.terms.forEach(t=>{
+    [t.term,...(t.aliases||[])].forEach(alias=>{
+      if(!alias || alias.length<2) return;
+      let start=0;
+      while(true){
+        const idx=text.toLowerCase().indexOf(alias.toLowerCase(),start);
+        if(idx<0) break;
+        candidates.push({start:idx,end:idx+alias.length,alias,term:t.term,summary:t.summary});
+        start=idx+alias.length;
+      }
+    });
+  });
+  candidates.sort((a,b)=>a.start-b.start || (b.end-b.start)-(a.end-a.start));
+  const picked=[];
+  let cursor=-1;
+  for(const c of candidates){
+    if(c.start>=cursor){picked.push(c);cursor=c.end}
+  }
+  return picked;
+}
+function breakJargon(){
+  const input=document.getElementById("jargonInput");
+  const out=document.getElementById("jargonOutput");
+  const text=input.value.trim();
+  if(!text){out.className="jargon-output";out.innerHTML="";return}
+  const matches=findTermMatches(text);
+  if(!matches.length){
+    out.className="jargon-output show";
+    out.innerHTML=`<div class="empty">当前词库没有识别到可拆解的术语。可以尝试删掉不重要的修饰词，或直接使用顶部搜索。</div>`;
+    return;
+  }
+  out.className="jargon-output show";
+  out.innerHTML=`<div style="font-weight:800">识别到 ${matches.length} 个概念</div>
+    <div class="breakdown">${matches.map(m=>`<div class="break-item" onclick="openTerm('${m.term}')"><b>${m.alias===m.term?m.term:`${m.alias} → ${m.term}`}</b><span>${m.summary}</span></div>`).join("")}</div>
+    <div style="margin-top:12px;color:var(--muted);font-size:13px">这是基于词库关键词匹配的静态拆解，不代表对整句话做了语义判断。</div>`;
+}
+function termHash(name){return `#term=${encodeURIComponent(name)}`}
+function openFromHash(){
+  if(!DB) return;
+  const h=location.hash;
+  if(h.startsWith("#term=")){
+    const name=decodeURIComponent(h.slice(6));
+    if(byTerm(name)) openTerm(name,false);
+  }else if(h.startsWith("#compare=")){
+    const title=decodeURIComponent(h.slice(9));
+    const i=DB.comparisons.findIndex(c=>c.title===title);
+    if(i>=0) openCompare(i,false);
+  }
+}
+function copyCurrentLink(){
+  navigator.clipboard?.writeText(location.href).then(()=>{
+    const btn=document.getElementById("copyLinkBtn");
+    if(btn){const old=btn.textContent;btn.textContent="已复制";setTimeout(()=>btn.textContent=old,1200)}
+  });
+}
+
 function renderFilters(){
   const list=["全部",...DB.categories];
   document.getElementById("filters").innerHTML=list.map(c=>
@@ -268,12 +368,14 @@ function clickableTerms(arr){
   if(!arr || !arr.length) return `<span style="color:#98a2b3">暂无</span>`;
   return `<div class="related">${arr.map(x=>`<button onclick="openTerm('${x}')">${x}</button>`).join("")}</div>`;
 }
-function openTerm(name){
+function openTerm(name, updateHash=true){
   const t=byTerm(name); if(!t) return;
   document.getElementById("modalTitle").textContent=t.term;
   document.getElementById("modalMeta").innerHTML=
     `<span class="pill">${t.category}</span><span class="pill">难度 ${difficultyStars(t.difficulty)}</span>`+
-    (t.aliases.length?`<span class="pill">别名：${t.aliases.join(" / ")}</span>`:"");
+    (t.aliases.length?`<span class="pill">别名：${t.aliases.join(" / ")}</span>`:"")+
+    (t.nature?`<span class="pill term-nature">${t.nature}</span>`:"")+
+    `<button id="copyLinkBtn" class="copy-link" onclick="copyCurrentLink()">复制词条链接</button>`;
   document.getElementById("modalBody").innerHTML=`
     <div class="summary-box"><b>一句话理解</b><div style="margin-top:8px;font-size:18px;line-height:1.7">${t.summary}</div></div>
     ${t.prereq.length?`<div class="detail" style="margin-bottom:14px"><h4>建议先了解</h4>${clickableTerms(t.prereq)}</div>`:""}
@@ -284,11 +386,12 @@ function openTerm(name){
       <div class="detail"><h4>容易和什么搞混</h4>${clickableTerms(t.confuse)}</div>
     </div>
     <div class="detail" style="margin-top:14px"><h4>继续了解</h4>${clickableTerms(t.related)}</div>`;
+  if(updateHash && location.hash!==termHash(t.term)) history.pushState(null,"",termHash(t.term));
   document.getElementById("termModal").classList.add("show");
   document.body.style.overflow="hidden";
 }
-function closeModal(){document.getElementById("termModal").classList.remove("show");document.body.style.overflow=""}
-function openCompare(i){
+function closeModal(){document.getElementById("termModal").classList.remove("show");document.body.style.overflow="";if(location.hash.startsWith("#term=")) history.pushState(null,"",location.pathname+location.search)}
+function openCompare(i, updateHash=true){
   const c=DB.comparisons[i];
   document.getElementById("compareTitle").textContent=c.title;
   document.getElementById("compareBody").innerHTML=`
@@ -296,9 +399,10 @@ function openCompare(i){
     <table class="compare-table"><thead><tr><th>对比项</th><th>${c.a}</th><th>${c.b}</th></tr></thead>
     <tbody>${c.rows.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join("")}</tbody></table>
     <div class="related" style="margin-top:18px"><button onclick="closeCompare();openTerm('${c.a}')">查看 ${c.a}</button><button onclick="closeCompare();openTerm('${c.b}')">查看 ${c.b}</button></div>`;
+  if(updateHash) history.pushState(null,"",`#compare=${encodeURIComponent(c.title)}`);
   document.getElementById("compareModal").classList.add("show");document.body.style.overflow="hidden";
 }
-function closeCompare(){document.getElementById("compareModal").classList.remove("show");document.body.style.overflow=""}
+function closeCompare(){document.getElementById("compareModal").classList.remove("show");document.body.style.overflow="";if(location.hash.startsWith("#compare=")) history.pushState(null,"",location.pathname+location.search)}
 document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeModal();closeCompare()}})
 init();
 </script>
